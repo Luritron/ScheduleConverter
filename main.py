@@ -1,156 +1,3 @@
-# import cv2
-# import numpy as np
-# import pandas as pd
-#
-#
-# def process_schedule_visual(image_path, output_excel):
-#     # 1. Завантаження
-#     img = cv2.imread(image_path)
-#     if img is None:
-#         print("Помилка: файл не знайдено.")
-#         return
-#
-#     vis_img = img.copy()  # Картинка для перевірки
-#     h_img, w_img = img.shape[:2]
-#
-#     # 2. Обробка для пошуку ліній
-#     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-#     thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-#                                    cv2.THRESH_BINARY_INV, 51, 5)
-#
-#     # 3. Знаходимо межі таблиці (ROI)
-#     # Шукаємо найбільший прямокутник (це рамка таблиці)
-#     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-#     table_contour = max(contours, key=cv2.contourArea)
-#     x_table, y_table, w_table, h_table = cv2.boundingRect(table_contour)
-#
-#     # Трохи звужуємо область пошуку (відкидаємо заголовки зверху)
-#     # Припускаємо, що "дані" займають нижні 80% таблиці
-#     roi_y = y_table + int(h_table * 0.15)
-#     roi_h = int(h_table * 0.85)
-#
-#     # 4. ГОЛОВНИЙ ФОКУС: Знаходимо ПРАВУ грань таблиці
-#     # Скануємо вертикальні лінії тільки в правій частині
-#     right_part = thresh[:, int(w_img * 0.8):]
-#     lines_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h_img // 20))
-#     detected_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, lines_kernel)
-#
-#     # Знаходимо всі X-координати вертикальних ліній
-#     line_contours, _ = cv2.findContours(detected_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-#     x_lines = []
-#     for c in line_contours:
-#         lx, ly, lw, lh = cv2.boundingRect(c)
-#         if lh > h_img * 0.3:  # Лінія має бути довгою
-#             x_lines.append(lx + lw // 2)
-#
-#     x_lines.sort()
-#
-#     # Права межа - це остання знайдена вертикальна лінія
-#     if not x_lines:
-#         print("Не вдалося знайти лінії. Спробуйте краще фото.")
-#         return
-#
-#     grid_right = x_lines[-1]
-#
-#     # ТЕПЕР МАТЕМАТИКА:
-#     # Ми не шукаємо ліву межу. Ми шукаємо ширину колонки.
-#     # Знаходимо середню відстань між лініями у правій частині (де години 20-24)
-#     # Це найточніший показник ширини стовпця.
-#     gaps = []
-#     for i in range(len(x_lines) - 1):
-#         gap = x_lines[i + 1] - x_lines[i]
-#         if w_img * 0.01 < gap < w_img * 0.06:  # Фільтр адекватних відстаней
-#             gaps.append(gap)
-#
-#     if not gaps:
-#         col_width = w_table / 27  # Аварійний варіант
-#     else:
-#         # Беремо медіану, щоб відкинути помилки
-#         col_width = np.median(gaps)
-#
-#     print(f"Розрахована ширина колонки: {col_width:.2f} пікселів")
-#
-#     # 5. Будуємо сітку рядків
-#     # Розбиваємо висоту таблиці (без шапки) на 12 рівних частин
-#     # Тому що 6 черг * 2 підчерги = 12 рядків. Це стандарт.
-#     row_height = roi_h / 12
-#
-#     schedule_result = {}
-#     # Порядок черг: 1.1, 1.2, 2.1... -> 1, 1, 2, 2...
-#     queue_map = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6]
-#
-#     for row_idx in range(12):
-#         # Координати рядка
-#         y1 = int(roi_y + row_idx * row_height)
-#         y2 = int(roi_y + (row_idx + 1) * row_height)
-#
-#         q_num = queue_map[row_idx]
-#         if q_num not in schedule_result:
-#             schedule_result[q_num] = [""] * 24
-#
-#         # Проходимо по 24 годинам СПРАВА НАЛІВО
-#         for hour_inv in range(24):
-#             hour_real = 23 - hour_inv
-#
-#             # Координати колонки (відштовхуємось від ПРАВОГО краю)
-#             x2 = int(grid_right - (hour_inv * col_width))
-#             x1 = int(grid_right - ((hour_inv + 1) * col_width))
-#
-#             # Малюємо сітку на дебаг-фото (зелений - межі)
-#             cv2.rectangle(vis_img, (x1, y1), (x2, y2), (0, 255, 0), 1)
-#
-#             # Зона аналізу (центр клітинки)
-#             margin_x = int(col_width * 0.35)  # Великий відступ, щоб не чіпляти сусідів
-#             margin_y = int(row_height * 0.35)
-#
-#             roi_x1, roi_x2 = x1 + margin_x, x2 - margin_x
-#             roi_y1, roi_y2 = y1 + margin_y, y2 - margin_y
-#
-#             # Перевірка виходу за межі
-#             if roi_x1 >= roi_x2 or roi_y1 >= roi_y2: continue
-#
-#             # Вирізаємо шматочок
-#             cell_roi = img[roi_y1:roi_y2, roi_x1:roi_x2]
-#
-#             # Шукаємо синій
-#             hsv = cv2.cvtColor(cell_roi, cv2.COLOR_BGR2HSV)
-#             lower_blue = np.array([90, 50, 50])
-#             upper_blue = np.array([170, 255, 255])
-#             mask = cv2.inRange(hsv, lower_blue, upper_blue)
-#
-#             blue_cnt = cv2.countNonZero(mask)
-#             total_px = (roi_x2 - roi_x1) * (roi_y2 - roi_y1)
-#
-#             if total_px > 0 and (blue_cnt / total_px) > 0.3:  # Поріг 30% синього
-#                 schedule_result[q_num][hour_real] = "+"
-#                 # Малюємо червоний кружок, якщо знайшли відключення
-#                 cv2.circle(vis_img, (x1 + int(col_width / 2), y1 + int(row_height / 2)),
-#                            5, (0, 0, 255), -1)
-#
-#     # 6. Зберігаємо результати
-#
-#     # 6.1 Зображення з сіткою (ОБОВ'ЯЗКОВО ПЕРЕВІРТЕ ЙОГО)
-#     cv2.imwrite("debug_grid.jpg", vis_img)
-#     print("Створено файл 'debug_grid.jpg'. Відкрийте його та перевірте, чи рівно лежить сітка.")
-#
-#     # 6.2 Excel
-#     final_data = []
-#     headers = [f"{h:02d}-{h + 1:02d}" for h in range(24)]
-#
-#     for q in sorted(schedule_result.keys()):
-#         row = {"Черга": q}
-#         for h_idx, val in enumerate(schedule_result[q]):
-#             row[headers[h_idx]] = val
-#         final_data.append(row)
-#
-#     df = pd.DataFrame(final_data)
-#     df.to_excel(output_excel, index=False)
-#     print(f"Таблиця збережена як: {output_excel}")
-#
-#
-# if __name__ == "__main__":
-#     process_schedule_visual("schedule.jpg", "Schedule_table.xlsx")
-
 import cv2
 import numpy as np
 import pandas as pd
@@ -160,7 +7,7 @@ def process_schedule_desire_match(image_path, output_excel):
     # 1. Завантаження
     img = cv2.imread(image_path)
     if img is None:
-        print("Помилка: файл не знайдено.")
+        print("Error: file wasn't found or can't open the image")
         return
 
     vis_img = img.copy()
@@ -193,7 +40,7 @@ def process_schedule_desire_match(image_path, output_excel):
         lines_x.append(int(np.mean(current_group)))
 
     if not lines_x:
-        print("Лінії не знайдено.")
+        print("Lines not detected")
         return
 
     # 4. ПОБУДОВА ЗЕЛЕНОЇ СІТКИ (АЛГОРИТМ ПРИЛИПАННЯ)
@@ -344,21 +191,21 @@ def process_schedule_desire_match(image_path, output_excel):
 
     # Збереження зображення
     cv2.imwrite("debug_grid.jpg", vis_img)
-    print("Згенеровано 'debug_grid.jpg'. Перевірте відповідність з 'desire.png'.")
+    print("Generated 'debug_grid.jpg'")
 
     # Експорт в Excel
     final_data = []
     headers = [f"{h:02d}-{h + 1:02d}" for h in range(24)]
 
     for q in sorted(schedule_result.keys()):
-        row = {"Черга": q}
+        row = {"Queue": q}
         for h_idx, val in enumerate(schedule_result[q]):
             row[headers[h_idx]] = val
         final_data.append(row)
 
     df = pd.DataFrame(final_data)
     df.to_excel(output_excel, index=False)
-    print(f"Таблиця готова: {output_excel}")
+    print(f"Table ready: {output_excel}")
 
 
 if __name__ == "__main__":
