@@ -209,4 +209,4 @@ def process_schedule_desire_match(image_path, output_excel):
 
 
 if __name__ == "__main__":
-    process_schedule_desire_match("schedule.jpg", "Schedule_excel.xlsx")
+    process_schedule_desire_match(input("Write full screenshot name: "), "Schedule_excel.xlsx")
